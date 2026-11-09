@@ -6,8 +6,8 @@ leave out.
 
 ```
 tvtuna scan                     which channels carry TV, and in which standard
-tvtuna watch --rf 34            watch one (the table knows the standard, the port, the gains)
-tvtuna tune --rf 33             ATSC 3.0: measure the gains with the receiver as judge
+tvtuna watch --rf N             watch one (the table knows the standard, the port, the gains)
+tvtuna tune --rf N              ATSC 3.0: measure the gains with the receiver as judge
 tvtuna status                   who holds the radio; the channel table
 tvtuna report                   a zip of logs and tables for a bug report (no stream data)
 ```
