@@ -126,9 +126,11 @@ def playlist(base: str) -> str:
     lines = ["#EXTM3U url-tvg=\"%s/guide.xml\"" % base]
     for rf in sorted(d.get("channels", {}), key=int):
         ch = d["channels"][rf]
-        if ch.get("standard") != "atsc1":
+        std = ch.get("standard") or ("atsc1" if ch.get("atsc1_hold") else None)
+        if std != "atsc1":
             continue
-        q = ch.get("last_scan", {}).get("mer_db")
+        holds = ch.get("atsc1_hold", {})
+        q = ch.get("last_scan", {}).get("mer_db") or next((h.get("mer_db") for h in holds.values() if h.get("mer_db")), None)
         name = f"RF {rf}" + (f" ({q:.0f} dB)" if q else "")
         lines.append(f'#EXTINF:-1 tvg-id="rf{rf}" tvg-name="{name}" group-title="ATSC 1.0",{name}')
         lines.append(f"{base}/ch/{rf}.ts")
