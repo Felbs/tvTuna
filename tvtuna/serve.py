@@ -90,7 +90,10 @@ class Engine:
     def _run_atsc1(self, rf: int, ch: dict) -> None:
         ant = ch.get("antenna") or self.cfg.antenna_atsc1
         start = state.atsc1_start(rf, ant)
-        known = start != (4, 40)                 # a proven hold on record: a short confirmation search
+        # A proven hold on record: a short confirmation search round it.  Asked of the record, not read off
+        # the start value (found live: a hold that happened to equal the default start, RFGR 4 / IFGR 40, read
+        # as "no hold", and the viewer sat through a full 12-cell search with three cells that decode nothing).
+        known = state.atsc1_hold(rf, ant) is not None
         coarse, max_cells = (2, 6) if known else (4, 30)
         live_dir = os.path.join(config.STATE_DIR, "live", f"rf{rf}")
         try:
@@ -186,10 +189,11 @@ class Engine:
             self._done(rf)
 
     def _done(self, rf: int) -> None:
+        # No lock here: whoever stops this worker holds lock_obj while joining it (found live: taking it
+        # made every stop and every channel change wait out the whole 90 s join, the chain long closed).
+        if self.rf == rf:
+            self.up, self.ts_path = False, None
         self.ready.set()
-        with self.lock_obj:
-            if self.rf == rf:
-                self.up, self.ts_path = False, None
         self.log(f"RF {rf} released")
 
 

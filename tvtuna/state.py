@@ -60,8 +60,8 @@ def remember_atsc1_hold(rf: int, antenna: str, held: dict, mer_db, proven: bool)
     save(d)
 
 
-def atsc1_start(rf: int, antenna: str, default=(4, 40)) -> tuple:
-    """Where the ATSC 1.0 chain starts: the last proven hold on this channel and port, else the default."""
+def atsc1_hold(rf: int, antenna: str) -> Optional[tuple]:
+    """The last proven hold on this channel and port as (RFGR, IFGR), or None when there is none."""
     ch = channel(rf) or {}
     h = ch.get("atsc1_hold", {}).get(antenna)
     if h and h.get("proven") and h.get("held"):
@@ -70,4 +70,9 @@ def atsc1_start(rf: int, antenna: str, default=(4, 40)) -> tuple:
             return (int(held["gain:RFGR"]), int(held["gain:IFGR"]))
         except (KeyError, TypeError, ValueError):
             pass
-    return default
+    return None
+
+
+def atsc1_start(rf: int, antenna: str, default=(4, 40)) -> tuple:
+    """Where the ATSC 1.0 chain starts: the last proven hold on this channel and port, else the default."""
+    return atsc1_hold(rf, antenna) or default
