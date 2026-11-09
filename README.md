@@ -8,9 +8,28 @@ leave out.
 tvtuna scan                     which channels carry TV, and in which standard
 tvtuna watch --rf N             watch one (the table knows the standard, the port, the gains)
 tvtuna tune --rf N              ATSC 3.0: measure the gains with the receiver as judge
+tvtuna serve                    a network tuner: playlist, live MPEG-TS over HTTP, XMLTV guide
 tvtuna status                   who holds the radio; the channel table
 tvtuna report                   a zip of logs and tables for a bug report (no stream data)
 ```
+
+## In another program's window
+
+`tvtuna serve` makes the receivers a network tuner on `http://127.0.0.1:8554/`:
+
+| path | what |
+|---|---|
+| `/playlist.m3u` | every channel in the table, grouped ATSC 1.0 / ATSC 3.0, `tvg-id` = `rf<N>`, `url-tvg` = the guide |
+| `/ch/<N>.ts` | that channel as live MPEG-TS over HTTP, from the live edge; the first client tunes it, the last one's leaving releases the radio after an idle time |
+| `/guide.xml` | XMLTV: the virtual channels and programmes decoded from the ATSC 1.0 PSIP tables of the streams seen so far |
+| `/status.json` | tuned channel, standard, radio holder, the stream numbers |
+
+Any IPTV player takes this. OnAir's **Internet TV (IPTV)** mode does: add the playlist address
+as a list and our receivers play in its window, with its player, controls and guide. ATSC 1.0 is
+the chain's own transport stream; ATSC 3.0 is the receiver's muxer output (HEVC copied, AC-3
+and MP2 audio with their languages, captions as a soft subtitle track), because IPTV players take
+MPEG-TS and not the fragmented-MP4 lanes themselves. Measured here: the ATSC 1.0 stream flows
+2 s after the first request, the ATSC 3.0 one after about 40 s (the receiver's start-up).
 
 ## What it is made of
 

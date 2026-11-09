@@ -52,6 +52,10 @@ class Config:
         env.pop("PYTHONPATH", None)
         if self.sdrplay_api:
             env["PATH"] = self.sdrplay_api + os.pathsep + env.get("PATH", "")
+        if self.radio_lock:
+            # the atsc3 chain takes the warden itself, if it can import the module from here
+            env["ATSC3_SIBLING_TOOLS"] = os.path.dirname(os.path.abspath(self.radio_lock))
+            env.setdefault("RXTUNE_LOCK", self.radio_lock)
         return env
 
 
