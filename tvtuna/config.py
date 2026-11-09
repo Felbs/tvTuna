@@ -50,8 +50,16 @@ class Config:
         breaks the interpreter's own), the SDRplay API on PATH when configured."""
         env = os.environ.copy()
         env.pop("PYTHONPATH", None)
+        # The receivers must load THEIR interpreter's SoapySDR and driver modules, whatever is first on the
+        # parent's PATH (found live: started from OnAir, whose PATH leads with its own toolchain, the chain
+        # loaded a foreign SoapySDR and found "no match" for the radio).  The interpreter's own folders go first.
+        pydir = os.path.dirname(os.path.abspath(self.python))
+        ahead = [pydir, os.path.join(pydir, "Library", "bin")]
         if self.sdrplay_api:
-            env["PATH"] = self.sdrplay_api + os.pathsep + env.get("PATH", "")
+            ahead.append(self.sdrplay_api)
+        env["PATH"] = os.pathsep.join(p for p in ahead if p and os.path.isdir(p)) + os.pathsep + env.get("PATH", "")
+        for k in ("SOAPY_SDR_PLUGIN_PATH", "SOAPY_SDR_ROOT"):
+            env.pop(k, None)
         if self.radio_lock:
             # the atsc3 chain takes the warden itself, if it can import the module from here
             env["ATSC3_SIBLING_TOOLS"] = os.path.dirname(os.path.abspath(self.radio_lock))
