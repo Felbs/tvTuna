@@ -114,21 +114,27 @@ class Atsc1Chain:
         self.proc: Optional[subprocess.Popen] = None
         self._log_fh = None
 
-    def start(self, startup_s: float = 150.0) -> bool:
+    def start(self, startup_s: float = 240.0) -> bool:
+        """Launch the chain and wait for its retune watcher and first equaliser line.  The wait
+        is long because the vendor's API can hold the device for 60-150 s after another chain
+        closed it (seen on the hand-over from the ATSC 3.0 chain); the chain itself rides that out."""
         from rxtune.attach import popen_group
         env = self.cfg.chain_env()
         env.update(CHAIN_ENV)
         env.update({"STVT_ANTENNA": self.antenna, "STVT_RFGAIN_SEL": str(self.start_gains[0]),
                     "STVT_IFGR": str(self.start_gains[1]), "STVT_DABNOTCH": "0" if self.rf < 14 else "1"})
         self._log_fh = open(os.path.join(self.out_dir, "chain.log"), "ab", buffering=0)
+        # stdin from nowhere: the chain must never inherit a controlling process's pipe
         self.proc = popen_group([self.cfg.python, "-u", self.cfg.stvt_tv_live, "--rf", str(self.rf),
-                                 "--out", self.ts_path], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                                 "--out", self.ts_path], env=env, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self._lines = 0
         threading.Thread(target=self._pump, daemon=True).start()
         t0 = time.time()
         armed = seen = False
         while time.time() - t0 < startup_s:
             if self.proc.poll() is not None:
-                self.log("the chain exited during start-up; see chain.log")
+                self.log(f"the chain exited during start-up (rc {self.proc.returncode}); see chain.log")
                 return False
             armed = armed or any("PERSIST-RETUNE: watcher armed" in ln for ln in self.scraper.tail)
             seen = seen or self.scraper.read() is not None
@@ -136,11 +142,13 @@ class Atsc1Chain:
                 break
             time.sleep(0.5)
         self.log(f"ATSC 1.0 chain up in {time.time() - t0:.0f} s on RF {self.rf} ({self.antenna}); "
-                 f"retune {'armed' if armed else 'NOT armed'}, equaliser {'reporting' if seen else 'silent'}")
+                 f"retune {'armed' if armed else 'NOT armed'}, equaliser {'reporting' if seen else 'silent'}; "
+                 f"{self._lines} log lines" + ("" if armed else f"; last: {self.scraper.tail[-1].strip()[:120] if self.scraper.tail else '(none)'}"))
         return armed
 
     def _pump(self) -> None:
         for raw in iter(self.proc.stdout.readline, b""):
+            self._lines += 1
             try:
                 self._log_fh.write(raw)
             except (OSError, ValueError):

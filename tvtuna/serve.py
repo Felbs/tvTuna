@@ -97,7 +97,11 @@ class Engine:
             with radio.site_lock(self.cfg, wait_s=120) as lk:
                 chain = atsc1.Atsc1Chain(self.cfg, rf, ant, live_dir, start=start, log=self.log)
                 if not chain.start():
+                    # found live: a chain that took 150 s to get the device (the vendor API holds
+                    # it a while after another chain closed it) was abandoned here and streamed
+                    # the radio with nobody holding the warden.  The chain is ours: stop it.
                     self.error = "chain did not start"
+                    chain.stop()
                     return
                 self.ts_path, self.up = chain.ts_path, True
                 self.ready.set()

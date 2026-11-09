@@ -9,6 +9,7 @@ tvtuna scan                     which channels carry TV, and in which standard
 tvtuna watch --rf N             watch one (the table knows the standard, the port, the gains)
 tvtuna tune --rf N              ATSC 3.0: measure the gains with the receiver as judge
 tvtuna serve                    a network tuner: playlist, live MPEG-TS over HTTP, XMLTV guide
+tvtuna engine                   an engine for another program's receiver: JSON lines in and out, TS on a socket
 tvtuna status                   who holds the radio; the channel table
 tvtuna report                   a zip of logs and tables for a bug report (no stream data)
 ```

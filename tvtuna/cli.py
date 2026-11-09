@@ -214,6 +214,12 @@ def main(argv=None) -> int:
     p.add_argument("--idle", type=float, default=30.0, help="seconds without a client before the radio is released")
     p.set_defaults(fn=lambda a, cfg: __import__("tvtuna.serve", fromlist=["run"]).run(cfg, a.host, a.port, log, a.idle))
 
+    p = sub.add_parser("engine", help="engine for another program's receiver: JSON lines on stdin/stdout, TS on a local TCP socket")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--tcp", type=int, default=8555, help="TS socket port (0 = pick a free one, told in 'hello')")
+    p.set_defaults(fn=lambda a, cfg: __import__("tvtuna.engine", fromlist=["run"]).run(cfg, a.host, a.tcp,
+                                                                                        lambda m: print(f"# {m}", file=sys.stderr, flush=True)))
+
     p = sub.add_parser("report", help="zip the logs and tables for a bug report (no stream data)")
     p.add_argument("--out")
     p.set_defaults(fn=cmd_report)
