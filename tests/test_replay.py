@@ -67,7 +67,6 @@ def test_engine_replay_speaks_the_protocol_and_paces_the_stream(tmp_path):
         while time.monotonic() - t0 < 3.0:
             got += s.recv(65536)
         dt = time.monotonic() - t0
-        s.close()
         assert got[0] == 0x47 and got[PKT] == 0x47, "the stream starts on a packet boundary"
         assert 0.7 < len(got) / dt / RATE < 1.3, f"paced at {len(got) / dt * 8 / 1e6:.2f} Mb/s, wanted 2.00"
 
@@ -80,6 +79,8 @@ def test_engine_replay_speaks_the_protocol_and_paces_the_stream(tmp_path):
                 st = line
                 break
         assert st is not None, "a status line with packets counted"
+        assert st["last"]["video"] is True, "packets are going out to a reader"
+        s.close()
         assert st["last"]["cc_errors"] == 0 and st["last"]["mer_db"] is None and st["last"]["loops"] >= 1
         assert "replay" in st["last"]["state"]
 

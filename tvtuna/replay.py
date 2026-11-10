@@ -8,7 +8,8 @@ This is the first thing to try from another program (OnAir's External engine mod
 the process, the line protocol, the socket and the player with nothing installed but this
 package.  Every `tune` is answered with the same file.  The status lines carry what was counted
 in the bytes sent (packets, continuity errors, TEI, nulls) and say plainly that this is a replay:
-there is no servo, no MER and no radio holder, and those fields are null."""
+there is no servo, no MER and no radio holder, and those fields are null.  `video` is true while
+the file's packets are going out to a connected reader (nothing here decodes them)."""
 import json
 import os
 import socket
@@ -79,6 +80,7 @@ class Replay:
         self.meter = TsMeter(path)
         self.loops = 0
         self.playing = False
+        self.sent_at = 0.0                           # time.monotonic() of the last file bytes sent
         self.srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.srv.bind((host, port))
@@ -120,6 +122,7 @@ class Replay:
                             break
                         data = data[:len(data) // TS_PKT * TS_PKT]
                         conn.sendall(data)
+                        self.sent_at = time.monotonic()
                         with self.meter._lock:
                             self.meter._ingest(data)
                         due += len(data) / self.rate
@@ -163,7 +166,9 @@ def run(path: str, host: str, port: int, log: Callable[[str], None], rate_mbps: 
     stop_all = threading.Event()
 
     def status_line() -> dict:
+        flowing = rp.playing and time.monotonic() - rp.sent_at < 1.0
         last = dict(rp.meter.snapshot(), standard="replay", state="replay (no radio)", setting=None, mer_db=None,
+                    video=flowing, pictures_per_s=None,
                     loops=rp.loops, mbps=round(rate * 8 / 1e6, 2), t=time.time())
         return {"ev": "status", "rf": tuned, "standard": "replay", "up": rp.playing, "radio": None,
                 "last": last, "error": None, "t": time.time()}
