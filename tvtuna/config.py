@@ -17,11 +17,18 @@ KEYS = {
     "atsc3_root": ("TVTUNA_ATSC3", "root of the atsc3 receiver tree (ATSC 3.0 chain, viewer, supervisor)"),
     "rxtune_src": ("TVTUNA_RXTUNE", "gr-rxtune's src/ directory (search + servo)"),
     "radio_lock": ("TVTUNA_RADIO_LOCK", "the site's radio warden module (radio_lock.py); empty = no warden"),
-    "antenna_atsc1": ("TVTUNA_ANT1", "SDR antenna port for ATSC 1.0"),
+    "antenna_atsc1": ("TVTUNA_ANT1", "SDR antenna port for ATSC 1.0 (several, comma-separated: the scan picks per channel)"),
     "antenna_atsc3": ("TVTUNA_ANT3", "SDR antenna port for ATSC 3.0"),
     "player": ("TVTUNA_PLAYER", "ffplay | mpv | none"),
     "sdrplay_api": ("TVTUNA_SDRPLAY_API", "directory of the SDRplay API dll, added to PATH for the chains"),
 }
+
+
+def ports(antenna: str) -> list:
+    """The antenna ports named in one setting: `Antenna A` is one, `Antenna A,Antenna B` is two.
+    The channel scan tries each on ATSC 1.0 and files a channel under the port that received it
+    best; everything else uses the first."""
+    return [p.strip() for p in (antenna or "").split(",") if p.strip()] or [antenna]
 
 
 @dataclasses.dataclass

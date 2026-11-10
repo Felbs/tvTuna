@@ -100,7 +100,10 @@ def cmd_watch(a, cfg):
     config.rxtune_on_path(cfg)
     from rxtune.lock import Yielded
     from rxtune.loop import DecoderDied
-    ant = a.antenna or cfg.antenna_atsc1
+    # The port the scan filed this channel under, when it filed it as ATSC 1.0; else the first configured.
+    ch = state.channel(a.rf) or {}
+    ant = (a.antenna or (ch.get("antenna") if ch.get("standard") == "atsc1" else None)
+           or config.ports(cfg.antenna_atsc1)[0])
     start = state.atsc1_start(a.rf, ant)
     restarts = 0
     pl = None
@@ -192,7 +195,8 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("scan", help="which channels carry TV, and in which standard")
     p.add_argument("--rf", type=int, nargs="*", help="channels to try (default UHF 14-36)")
-    p.add_argument("--antenna1", help="port for the ATSC 1.0 pass")
+    p.add_argument("--antenna1", help='port for the ATSC 1.0 pass; several ("Antenna A,Antenna B") = each channel '
+                                      'is tried on each and filed under the better one')
     p.add_argument("--antenna3", help="port for the ATSC 3.0 pass")
     p.add_argument("--secs", type=float, default=25.0, help="ATSC 1.0 dwell per channel")
     p.add_argument("--skip-atsc3", action="store_true")

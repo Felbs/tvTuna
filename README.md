@@ -115,6 +115,12 @@ written. The receivers themselves also run on Linux; tvTuna has not been run the
    and no path is built in. `--antenna-atsc1` / `--antenna-atsc3` name the SDR's antenna ports
    (default `Antenna A` / `Antenna B`); `--radio-lock` names a site warden module if several
    programs share the radio, and is not needed otherwise.
+
+   Two antennas on two ports: name both for ATSC 1.0 (`--antenna-atsc1 "Antenna A,Antenna B"`, or
+   `tvtuna scan --antenna1 "Antenna A,Antenna B"`). The scan then tests every channel on each port
+   and files the channel under the one with the higher MER; `watch` and `serve` use that port for
+   that channel from then on. Here the better port differs between two neighbouring channels, by
+   about 1 dB each way.
 6. **First picture**: `tvtuna watch --rf N` on an ATSC 1.0 channel you can receive. The first
    watch of a channel searches the gains (two to three minutes, the picture comes and goes while
    it looks); the table then remembers what it proved and the next start is a short confirmation.

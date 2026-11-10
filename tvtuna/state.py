@@ -39,7 +39,8 @@ def remember_scan(rows: list, antenna1: str, antenna3: str) -> None:
         ch["last_scan"] = {**r, "when": time.time()}
         if r.get("standard"):
             ch["standard"] = r["standard"]
-            ch["antenna"] = antenna1 if r["standard"] == "atsc1" else antenna3
+            # ATSC 1.0: the port the scan chose for this channel (it may have tried several)
+            ch["antenna"] = (r.get("antenna") or config.ports(antenna1)[0]) if r["standard"] == "atsc1" else antenna3
     d["scans"].append({"when": time.time(), "rfs": [r["rf"] for r in rows],
                        "locked": [r["rf"] for r in rows if r.get("standard")]})
     d["scans"] = d["scans"][-20:]

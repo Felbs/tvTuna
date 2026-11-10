@@ -88,7 +88,7 @@ class Engine:
 
     # ---- ATSC 1.0 -------------------------------------------------------------------------
     def _run_atsc1(self, rf: int, ch: dict) -> None:
-        ant = ch.get("antenna") or self.cfg.antenna_atsc1
+        ant = ch.get("antenna") or config.ports(self.cfg.antenna_atsc1)[0]
         start = state.atsc1_start(rf, ant)
         # A proven hold on record: a short confirmation search round it.  Asked of the record, not read off
         # the start value (found live: a hold that happened to equal the default start, RFGR 4 / IFGR 40, read
