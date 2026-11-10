@@ -27,6 +27,15 @@ def cmd_init(a, cfg):
     return 0
 
 
+def cmd_engine(a, cfg):
+    say = lambda m: print(f"# {m}", file=sys.stderr, flush=True)
+    if a.replay:
+        from . import replay
+        return replay.run(a.replay, a.host, a.tcp, say, a.mbps)
+    from . import engine
+    return engine.run(cfg, a.host, a.tcp, say)
+
+
 def cmd_status(a, cfg):
     print(f"tvtuna {__version__}")
     print(radio.describe(radio.holder(cfg)))
@@ -217,8 +226,13 @@ def main(argv=None) -> int:
     p = sub.add_parser("engine", help="engine for another program's receiver: JSON lines on stdin/stdout, TS on a local TCP socket")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--tcp", type=int, default=8555, help="TS socket port (0 = pick a free one, told in 'hello')")
-    p.set_defaults(fn=lambda a, cfg: __import__("tvtuna.engine", fromlist=["run"]).run(cfg, a.host, a.tcp,
-                                                                                        lambda m: print(f"# {m}", file=sys.stderr, flush=True)))
+    p.add_argument("--replay", metavar="FILE.ts", help="no radio, no receivers: play this recorded transport stream at its own rate, in a loop")
+    p.add_argument("--mbps", type=float, default=0.0, help="--replay: the stream rate, if the file's own clock cannot be read")
+    p.set_defaults(fn=cmd_engine)
+
+    p = sub.add_parser("doctor", help="check every piece the configuration points at; one PASS / FAIL line each")
+    p.add_argument("--radio", action="store_true", help="also list the attached SDRs (not while something is streaming)")
+    p.set_defaults(fn=lambda a, cfg: __import__("tvtuna.doctor", fromlist=["run"]).run(cfg, a.radio))
 
     p = sub.add_parser("report", help="zip the logs and tables for a bug report (no stream data)")
     p.add_argument("--out")

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tvtuna"
+description = "One command for live over-the-air television on an SDR, ATSC 1.0 and ATSC 3.0, around receivers that live elsewhere"
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+requires-python = ">=3.9"
+dynamic = ["version"]
+dependencies = []
+
+[project.scripts]
+tvtuna = "tvtuna.cli:main"
+
+[tool.setuptools]
+packages = ["tvtuna"]
+
+[tool.setuptools.dynamic]
+version = { attr = "tvtuna.__version__" }
