@@ -49,10 +49,10 @@ def cmd_scan(a, cfg):
         print(config.explain_missing(missing))
         return 2
     rfs = a.rf or scan.UHF_DEFAULT
-    scan.run(cfg, rfs, a.antenna1 or cfg.antenna_atsc1, a.antenna3 or cfg.antenna_atsc3, log=log,
-             atsc1_secs=a.secs, skip_atsc3=a.skip_atsc3)
+    table = scan.run(cfg, rfs, a.antenna1 or cfg.antenna_atsc1, a.antenna3 or cfg.antenna_atsc3, log=log,
+                     atsc1_secs=a.secs, skip_atsc3=a.skip_atsc3)
     print(scan.table_text(state.load()))
-    return 0
+    return 0 if len(table) == len(rfs) else 4          # 4: cut short (the radio was needed elsewhere)
 
 
 def cmd_tune(a, cfg):
@@ -110,7 +110,7 @@ def cmd_watch(a, cfg):
             while True:
                 chain = atsc1.Atsc1Chain(cfg, a.rf, ant, live_dir, start=start, log=log)
                 try:
-                    if not chain.start():
+                    if not chain.start(beat=lk.heartbeat):
                         log("chain did not come up; see " + os.path.join(live_dir, "chain.log"))
                         return 3
                     if pl is None and kind != "none":

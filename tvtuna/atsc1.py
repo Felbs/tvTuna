@@ -113,11 +113,19 @@ class Atsc1Chain:
         self.fe.state = {"rfgain_sel": start[0], "ifgr": start[1]}
         self.proc: Optional[subprocess.Popen] = None
         self._log_fh = None
+        self.equaliser_seen = False
 
-    def start(self, startup_s: float = 240.0) -> bool:
+    def start(self, startup_s: float = 240.0, beat: Optional[Callable[[], None]] = None,
+              seen_wait_s: Optional[float] = None) -> bool:
         """Launch the chain and wait for its retune watcher and first equaliser line.  The wait
         is long because the vendor's API can hold the device for 60-150 s after another chain
-        closed it (seen on the hand-over from the ATSC 3.0 chain); the chain itself rides that out."""
+        closed it (seen on the hand-over from the ATSC 3.0 chain); the chain itself rides that out.
+
+        `beat` is called through the wait: the caller's radio lock goes stale after 90 s without
+        a heartbeat (found on air 2026-11-09: a scan lost its lock while it waited here).
+        `seen_wait_s` stops waiting for the equaliser that long after the watcher armed: on an
+        empty channel there is no field sync and the equaliser never prints (the channel scan).
+        `self.equaliser_seen` says which it was."""
         from rxtune.attach import popen_group
         env = self.cfg.chain_env()
         env.update(CHAIN_ENV)
@@ -132,7 +140,10 @@ class Atsc1Chain:
         threading.Thread(target=self._pump, daemon=True).start()
         t0 = time.time()
         armed = seen = False
+        t_armed = None
         while time.time() - t0 < startup_s:
+            if beat is not None:
+                beat()
             if self.proc.poll() is not None:
                 self.log(f"the chain exited during start-up (rc {self.proc.returncode}); see chain.log")
                 return False
@@ -140,7 +151,12 @@ class Atsc1Chain:
             seen = seen or self.scraper.read() is not None
             if armed and seen:
                 break
+            if armed and t_armed is None:
+                t_armed = time.time()
+            if seen_wait_s is not None and t_armed is not None and time.time() - t_armed > seen_wait_s:
+                break
             time.sleep(0.5)
+        self.equaliser_seen = seen
         self.log(f"ATSC 1.0 chain up in {time.time() - t0:.0f} s on RF {self.rf} ({self.antenna}); "
                  f"retune {'armed' if armed else 'NOT armed'}, equaliser {'reporting' if seen else 'silent'}; "
                  f"{self._lines} log lines" + ("" if armed else f"; last: {self.scraper.tail[-1].strip()[:120] if self.scraper.tail else '(none)'}"))
@@ -186,14 +202,22 @@ class Atsc1Chain:
 
 
 def probe(cfg: config.Config, rf: int, antenna: str, out_dir: str, secs: float = 25.0,
-          start=(4, 40), log: Callable[[str], None] = print) -> dict:
+          start=(4, 40), log: Callable[[str], None] = print, beat: Optional[Callable[[], None]] = None,
+          sync_wait_s: float = 15.0) -> dict:
     """Is there a decodable ATSC 1.0 signal on this RF at the start gains?  One chain, `secs`
-    of air, then MER percentiles and the picture count.  (The channel scan's lock test.)"""
+    of air, then MER percentiles and the picture count.  (The channel scan's lock test.)
+    A channel whose equaliser has printed nothing `sync_wait_s` after the chain came up has no
+    field sync and is answered at once (a real channel prints within a second; waiting the
+    full start-up time cost two minutes per empty channel).  `beat` keeps the caller's radio
+    lock alive."""
     chain = Atsc1Chain(cfg, rf, antenna, out_dir, start=start, log=lambda m: None)
     t0 = time.time()
     try:
-        if not chain.start(startup_s=90.0):
-            return {"rf": rf, "standard": None, "error": "chain did not start"}
+        if not chain.start(startup_s=90.0, beat=beat, seen_wait_s=sync_wait_s):
+            return {"rf": rf, "standard": None, "error": "chain did not start", "secs": round(time.time() - t0)}
+        if not chain.equaliser_seen:
+            return {"rf": rf, "standard": None, "error": f"no field sync in {sync_wait_s:.0f} s",
+                    "secs": round(time.time() - t0)}
         vals = []
         t1 = time.time()
         while time.time() - t1 < secs:
@@ -201,6 +225,8 @@ def probe(cfg: config.Config, rf: int, antenna: str, out_dir: str, secs: float =
             if v is not None:
                 vals.append(v)
             chain.meter.count()
+            if beat is not None:
+                beat()
             time.sleep(0.2)
         vals.sort()
         snap = chain.meter.snapshot()

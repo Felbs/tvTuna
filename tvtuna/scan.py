@@ -24,34 +24,40 @@ def run(cfg: config.Config, rfs: Iterable[int], antenna1: str, antenna3: str,
     log(f"scan: {len(rfs)} channels; ATSC 1.0 lock test {atsc1_secs:.0f} s each on {antenna1}, "
         f"then ATSC 3.0 {atsc3_secs:.0f} s each on {antenna3}")
     t0 = time.time()
+    stopped = None
     with radio.site_lock(cfg) as lk:
         for rf in rfs:
-            reason = lk.should_yield()
-            if reason:
-                log(f"scan stopped: {reason}")
+            lk.heartbeat()
+            stopped = lk.should_yield()
+            if stopped:
+                log(f"scan stopped before RF {rf}: {stopped}")
                 break
-            r = atsc1.probe(cfg, rf, antenna1, os.path.join(probe_dir, f"rf{rf}"), secs=atsc1_secs)
-            rows[rf] = r
+            r = atsc1.probe(cfg, rf, antenna1, os.path.join(probe_dir, f"rf{rf}"), secs=atsc1_secs, beat=lk.heartbeat)
+            rows[rf] = {"rf": rf, "standard": None, **r}
             if r.get("standard") == "atsc1":
                 log(f"  RF {rf:2d}  ATSC 1.0  MER {r['mer_db']:.1f} dB  {r['pictures']} pictures")
             else:
                 mer = r.get("mer_db")
-                log(f"  RF {rf:2d}  no ATSC 1.0 lock" + (f" (MER {mer:.1f} dB, {r.get('pictures', 0)} pictures)" if mer else ""))
-    if not skip_atsc3:
+                log(f"  RF {rf:2d}  no ATSC 1.0 lock" + (f" (MER {mer:.1f} dB, {r.get('pictures', 0)} pictures)" if mer
+                                                    else f" ({r['error']})" if r.get("error") else ""))
+    # A scan that was cut short keeps what it tested and stops: a channel that never had its
+    # ATSC 1.0 test must not be filed as "no ATSC 3.0 carrier", and whoever needed the radio gets it.
+    if not skip_atsc3 and not stopped:
         for rf in rfs:
-            if rows.get(rf, {}).get("standard"):
+            if rows[rf].get("standard"):
                 continue
             r3 = atsc3.probe(cfg, rf, antenna3, secs=atsc3_secs)
             if r3.get("standard") == "atsc3":
-                rows[rf] = {**rows.get(rf, {}), **r3, "standard": "atsc3"}
+                rows[rf] = {**{k: v for k, v in rows[rf].items() if k != "error"}, **r3, "standard": "atsc3"}
                 log(f"  RF {rf:2d}  ATSC 3.0  {r3['frames']} frames  FEC {r3['fec_pct']} %")
             else:
-                rows[rf] = {**rows.get(rf, {}), "atsc3": r3}
+                rows[rf] = {**rows[rf], "atsc3": r3}
                 log(f"  RF {rf:2d}  no ATSC 3.0 carrier")
     table = [rows[rf] for rf in rfs if rf in rows]
     state.remember_scan(table, antenna1, antenna3)
     locked = [r for r in table if r.get("standard")]
-    log(f"scan done in {(time.time() - t0) / 60:.0f} min: {len(locked)} of {len(table)} channels carry TV")
+    log(f"scan {'cut short' if stopped else 'done'} in {(time.time() - t0) / 60:.0f} min: {len(locked)} of {len(table)} tested channels "
+        f"carry TV" + (f"; {len(rfs) - len(table)} not tested" if stopped else ""))
     return table
 
 
