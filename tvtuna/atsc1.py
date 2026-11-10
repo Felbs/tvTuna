@@ -22,7 +22,11 @@ from .tsmeter import TsMeter
 CHAIN_ENV = {"STVT_EQ": "long", "STVT_VITERBI": "soft", "STVT_RFNOTCH": "1", "STVT_RS": "stock",
              "STVT_SPS": "1.1", "STVT_RRC_SYMS": "8", "STVT_TEISCRUB": "1", "STVT_EQ_LKG": "1",
              "STVT_EQ_LKG_RMS": "1.0", "STVT_EQ_TELEM": "1", "STVT_EQ_TELEM_EVERY": "1",
-             "STVT_PERSIST_RETUNE": "1"}
+             "STVT_PERSIST_RETUNE": "1",
+             # Segment sync: at the block's own integrator speed (0.40 a segment) it keeps re-locking (1528
+             # times in a 10-minute recording, 10 at 0.10) and re-locks lose bursts of packets.  RF 34 on air,
+             # 2026-11-10, 4 legs of 4 minutes: 60 continuity errors a minute at 0.40, none at 0.10, same MER.
+             "ATSC_SYNC_SOFT_ALPHA": "0.10"}
 RFGR_SPAN = (0, 12)          # RSPdx LNA states worth searching for TV
 IFGR_SPAN = (20, 59)
 
