@@ -90,12 +90,84 @@ counts of what was sent; the servo line reads `replay (no radio)` and there is n
 there is no radio. Checked this way on 2026-11-09 with the pattern above: 1345 pictures shown,
 0 late, 0 decode errors, 0 continuity errors across two passes of the file.
 
+## Measured on Linux, without a radio (2026-11-11)
+
+One machine: Ryzen 5 1600X (6 cores, 12 threads), GTX 1060, Arch-based Linux 7.2, Python 3.14.8,
+GNU Radio 3.10.12, ffmpeg 9.0.2. tvTuna at 47cacfd, the ATSC 3.0 receiver with its packed
+int16 LDPC kernel (ABI 7) rebuilt. Everything served on `127.0.0.1`.
+
+* **Tests**: `pytest tests`: 13 passed, 0 failed.
+* **`tvtuna doctor`**: 15 PASS, 1 FAIL, 3 SKIP. The FAIL is "tv_live.py keeps the stream through a
+  gain step": the Software TV Tuner checkout on that machine is a branch from before the
+  2026-11-09 fix (ATSC 1.0 only). The SKIPs: no warden configured, no channel table, radio not
+  looked for. Before a `git pull` of gr-rxtune the count was 14 / 2 / 3 ("gr-rxtune has the servo").
+
+**The engine on a banked ATSC 3.0 capture.** `tvtuna engine` has no switch for a recorded IQ
+file (`--replay` takes a transport stream), so the receiver's own replay options
+(`--capture FILE --rate 8e6 --realtime --shed`: the file at the air's pace, Frames shed as live
+air would shed them) were handed to it through the remembered-gains entry of a throwaway channel
+table (`TVTUNA_STATE` pointed at a scratch directory). The engine code that ran is the code as
+committed: line protocol, orchestrator, low-latency muxer, the socket. The capture is 120 s of
+one 6 MHz multiplex at 8 MS/s (485 Frames of 247 ms; HEVC 1280x720 at 59.94, AC-3 5.1, a second
+language, captions). A client connects at the tune and records 36 s; a second client then takes
+the socket mid-stream and records 36 s. Three runs.
+
+| | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| process start to `hello` | 0.09 s | 0.09 s | 0.09 s |
+| `tune` to the `up` event | 10.24 s | 9.44 s | 9.45 s |
+| `tune` to the first TS byte at the client (keep-alive nulls not counted) | 10.52 s | 9.51 s | 9.51 s |
+| first client: first video packet / first decoded picture | keyframe / I | keyframe / I | keyframe / I |
+| first client, first 30 s decoded by ffmpeg: pictures | 1799 | 1799 | 1799 |
+| first client: lines from the HEVC, AC-3 and MP2 decoders | 0 | 0 | 0 |
+| second client (joined 46 s after the tune): first byte after connect | 14 ms | 6 ms | 6 ms |
+| second client: first video packet / first decoded picture | keyframe / I | keyframe / I | keyframe / I |
+| second client, 30 s: pictures; decoder lines | 1799; 0 | 1799; 0 | 1799; 0 |
+| transport errors (TEI) in either recording | 0 | 0 | 0 |
+
+1799 pictures in 30.08 s is every picture of a 59.94 Hz stream. The first client's stream opens
+with the tables (SDT, PAT, PMT) and then the keyframe; the second client's opens with the PAT
+in front of the latest keyframe, which is what `player.join_point` is for.
+
+**One thing ffmpeg does say.** Its MPEG-TS demuxer prints `Packet corrupt` once per 2 s slot:
+15 or 16 times in each 30 s, in every recording of every run. The receiver's muxer writes the
+sink one ffmpeg run per slot, and each run restarts the 4-bit continuity counter of every
+stream: 16 to 18 restarts per stream in a 36 s recording, none carrying a discontinuity flag.
+The decoders are not affected (0 lines, every picture). A player that drops flagged packets is:
+the same 30 s read with `-fflags +discardcorrupt` (as `player.py`'s ffplay command does) gives
+1786 pictures instead of 1799 (one recording measured). The receiver has a counter rewrite for
+exactly this on its player pipe; on the file sink that tvTuna serves from it is not applied.
+
+**Does the receiver keep up?** Yes, with little to spare on six cores.
+
+| | |
+|---|---|
+| paced at the air's rate, to the end of the capture (runs 2 and 3, identical) | 485 of 485 Frames, 119.849 s of air in 119.360 s: 1.004x |
+| FEC blocks | 35,890 of 35,890 converged (485 x 74: no Frame shed) |
+| 5 s reports, all three runs | 0.99x to 1.16x; input queue 7 Frames deep while starting, then 0; 0 underruns |
+| slowest stage against the 247 ms Frame budget | 1.05x to 1.06x |
+| re-acquisitions, supervisor restarts | 0, 0 |
+| muxer | 224 to 227 ms per 2 s slot; dropped 0, failed 0, stalled 0 s |
+| audio decode | 2.4x real time; 0 padded, 0 behind |
+| media units | 237 complete, 3 lost, the same 3 in every run, 0 sequence breaks |
+| not paced, nothing shed, the whole stack running (one run) | 119.849 s of air in 112.117 s: 1.069x |
+
+Run 1 was stopped by the test at 84 s (306 Frames at 75 s, 1.00x to 1.02x, same queue). The 3
+lost media units being identical in every run points at the capture's own ends, not at this
+machine; that is a reading, not a measurement. The margin is the number to keep in mind: 7 %
+on this processor with nothing else running.
+
+**`tvtuna engine --replay` on the transport stream** that run produced (53 MB, 3.60 Mb/s read
+from its PCR), three runs: `hello` 0.13 to 0.14 s after the process starts, the first TS byte
+2 to 3 ms after `tune`, first video packet a keyframe, 1799 pictures in 30.08 s, 0 decoder
+lines, the same 16 demuxer flags.
+
 ## Setting up for real air
 
 tvTuna is the part around the receivers, so the receivers come first. Tested with an
 **SDRplay RSPdx on Windows 11**; the gain knobs it searches are the SDRplay RSP family's (LNA
 state and IF gain reduction). Another SoapySDR radio would need its own knob map, which is not
-written. The receivers themselves also run on Linux; tvTuna has not been run there yet.
+written. The receivers themselves also run on Linux. tvTuna has been run there without a radio (the tests, `doctor`, and the engine on a banked capture: the section below); its live paths on Linux are not tested yet.
 
 1. **An interpreter with SoapySDR and GNU Radio 3.10.** [radioconda](https://github.com/ryanvolz/radioconda)
    has both. Install your radio's driver (for an RSP, the SDRplay API).
