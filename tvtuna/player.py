@@ -24,6 +24,51 @@ def _aligned(buf: bytes) -> int:
     return 0
 
 
+_TABLE_PIDS = (0x0000, 0x0011, 0x1000)       # PAT, SDT, and the PMT where ffmpeg's muxer puts it
+
+
+def _key(buf: bytes, o: int) -> bool:
+    """A packet that starts a unit and carries the random-access flag."""
+    return (buf[o] == 0x47 and bool(buf[o + 1] & 0x40) and bool(buf[o + 3] & 0x20)
+            and buf[o + 4] > 0 and bool(buf[o + 5] & 0x40))
+
+
+def _pid(buf: bytes, o: int) -> int:
+    return ((buf[o + 1] & 0x1F) << 8) | buf[o + 2]
+
+
+def join_point(path: str, size: int, scan: int = 6_000_000) -> Optional[int]:
+    """Where a new client of an ATSC 3.0 sink starts: the last place a decoder can.
+
+    The receiver's muxer writes the sink one ffmpeg run per 2 s slot, appended: the tables (SDT,
+    PAT, PMT), then the slot's first picture, a keyframe, flagged random-access.  A client started
+    a fixed number of bytes back lands inside a slot, and its decoder throws pictures away until
+    the next slot arrives: up to 2 s of nothing after the first byte (measured 2026-11-10, a join
+    1 s into the first slot: 140 decoder errors, no picture until the second).
+
+    -> the offset of the tables in front of the last such keyframe within the last `scan` bytes,
+    or None when the file is not laid out that way (a broadcast transport stream, for one); the
+    caller then keeps its byte rule.  The video stream is taken to be the one whose keyframe
+    opens the file."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(40 * TS_PKT)
+            start = max(0, (size - scan) // TS_PKT * TS_PKT)
+            f.seek(start)
+            buf = f.read(size - start)
+    except OSError:
+        return None
+    vpid = next((_pid(head, o) for o in range(0, len(head) - TS_PKT + 1, TS_PKT) if _key(head, o)), None)
+    if vpid is None:
+        return None
+    for o in range((len(buf) // TS_PKT - 1) * TS_PKT, -1, -TS_PKT):
+        if _pid(buf, o) == vpid and _key(buf, o):
+            while o >= TS_PKT and _pid(buf, o - TS_PKT) in _TABLE_PIDS:
+                o -= TS_PKT
+            return start + o
+    return None
+
+
 def player_cmd(kind: str, title: str) -> Optional[list]:
     if kind == "ffplay":
         return ["ffplay", "-hide_banner", "-loglevel", "error", "-window_title", title,

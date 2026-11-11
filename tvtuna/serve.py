@@ -26,7 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable, Optional
 
 from . import atsc1, atsc3, config, guide, radio, state
-from .player import NULL_PKT, TS_PKT, _aligned
+from .player import NULL_PKT, TS_PKT, _aligned, join_point
 
 BACK_BYTES = 500_000
 ATSC3_SINK_WAIT_S = 240.0        # LDM pool warm-up, lane discovery, first muxed chunk
@@ -140,9 +140,15 @@ class Engine:
             pass
         gains = atsc3.verdict_for(self.cfg, rf, ant)
         extra = f"--rfgain {gains['rfgain_sel']} --ifgr {gains['ifgr']}" if gains and gains.get("rfgain_sel") is not None else ""
+        # A network tuner has no use for the viewer's 25 s cushion: the muxer follows the write head
+        # one slot at a time and the audio worker decodes each slot as it lands.  Only from a
+        # receiver tree that has the options (atsc3.low_latency); an older one runs as before.
+        fast = atsc3.low_latency(self.cfg)
         cmd = [self.cfg.python, os.path.join(self.cfg.atsc3_root, "tools", "atsc3_watch_av.py"), "--rf", str(rf),
                "--ant", ant, "--live-dir", live_dir, "--python", self.cfg.python, "--cc",
-               "--tv-extra", f"--player none --out {sink}"]
+               "--tv-extra", f"--player none --out {sink}" + (" --lag 0 --chunk 1" if fast else "")]
+        if fast:
+            cmd.append("--audio-extra=--follow")
         if extra:
             cmd += ["--chain-extra", extra]
         mod = atsc3.supervisor_module(self.cfg)
@@ -152,7 +158,9 @@ class Engine:
             proc = subprocess.Popen(cmd, cwd=self.cfg.atsc3_root, env=self.cfg.chain_env(), creationflags=flags,
                                     stdout=open(os.path.join(live_dir, "orchestrator.log"), "ab", buffering=0),
                                     stderr=subprocess.STDOUT)
-            self.log(f"ATSC 3.0 up on RF {rf} ({ant}); orchestrator pid {proc.pid}; waiting for the muxed stream")
+            self.log(f"ATSC 3.0 up on RF {rf} ({ant}); orchestrator pid {proc.pid}; "
+                     f"{'low-latency' if fast else 'receiver without the low-latency options'}; "
+                     f"waiting for the muxed stream")
             t0 = time.time()
             while proc.poll() is None and not self.idle():
                 h = atsc3.health(mod, live_dir)
@@ -169,7 +177,8 @@ class Engine:
                 if not self.up and time.time() - t0 > ATSC3_SINK_WAIT_S:
                     self.error = f"no muxed stream within {ATSC3_SINK_WAIT_S:.0f} s (frames {h.get('frames')}, FEC {h.get('fec_pct')} %)"
                     break
-                time.sleep(1.0)
+                # waiting for the first picture: look often, a second here is a second of the pick
+                time.sleep(1.0 if self.up or not fast else 0.2)
             if proc.poll() is not None and not self.up:
                 self.error = f"orchestrator exited rc {proc.returncode}"
         except Exception as e:                            # noqa: BLE001
@@ -276,10 +285,15 @@ def make_handler(engine: Engine, log):
                         time.sleep(0.3)
                         continue
                     if pos is None or size < pos:
+                        # a new ATSC 3.0 client starts on a keyframe (player.join_point)
+                        key = join_point(path, size) if pos is None and engine.standard == "atsc3" else None
                         pos = max(0, size - BACK_BYTES) if pos is None else 0
-                        with open(path, "rb") as f:
-                            f.seek(pos)
-                            pos += _aligned(f.read(3 * TS_PKT))
+                        if key is not None:
+                            pos = key
+                        else:
+                            with open(path, "rb") as f:
+                                f.seek(pos)
+                                pos += _aligned(f.read(3 * TS_PKT))
                     if size > pos:
                         with open(path, "rb") as f:
                             f.seek(pos)

@@ -31,7 +31,9 @@ as a list and our receivers play in its window, with its player, controls and gu
 the chain's own transport stream; ATSC 3.0 is the receiver's muxer output (HEVC copied, AC-3
 and MP2 audio with their languages, captions as a soft subtitle track), because IPTV players take
 MPEG-TS and not the fragmented-MP4 lanes themselves. Measured here: the ATSC 1.0 stream flows
-2 s after the first request, the ATSC 3.0 one after about 40 s (the receiver's start-up).
+2 s after the first request, the ATSC 3.0 one after 13 to 15 s and starting on a keyframe (the
+receiver's start-up; with a receiver tree from before its low-latency options, which tvTuna
+detects and does not ask for, about 40 s).
 
 ## What it is made of
 

@@ -25,7 +25,7 @@ import time
 from typing import Callable, Optional
 
 from . import config, radio, serve, state
-from .player import NULL_PKT, TS_PKT, _aligned
+from .player import NULL_PKT, TS_PKT, _aligned, join_point
 
 
 def _emit(obj: dict) -> None:
@@ -81,10 +81,15 @@ class TsSocket:
                     time.sleep(0.3)
                     continue
                 if pos is None or size < pos:
+                    # a new ATSC 3.0 client starts on a keyframe (player.join_point)
+                    key = join_point(path, size) if pos is None and self.engine.standard == "atsc3" else None
                     pos = max(0, size - serve.BACK_BYTES) if pos is None else 0
-                    with open(path, "rb") as f:
-                        f.seek(pos)
-                        pos += _aligned(f.read(3 * TS_PKT))
+                    if key is not None:
+                        pos = key
+                    else:
+                        with open(path, "rb") as f:
+                            f.seek(pos)
+                            pos += _aligned(f.read(3 * TS_PKT))
                 if size > pos:
                     with open(path, "rb") as f:
                         f.seek(pos)

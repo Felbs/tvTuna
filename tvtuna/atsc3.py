@@ -25,6 +25,24 @@ def _tool(cfg: config.Config, name: str) -> str:
     return os.path.join(cfg.atsc3_root, "tools", name)
 
 
+def low_latency(cfg: config.Config) -> bool:
+    """True when the receiver tree can serve a channel at its shortest delay.
+
+    Two options make the difference between a first picture some 40 s after the pick and one
+    some 13 s after it, and between a stream 25 s behind the air and one a slot behind: the audio
+    worker's --follow (decode when the lane grows, not on a clock) and the orchestrator's
+    --audio-extra that passes it on.  A receiver tree from before them exits on the unknown
+    option, so they are asked for only when the tree's own tools name them."""
+    try:
+        with open(_tool(cfg, "atsc3_audio.py"), encoding="utf-8", errors="replace") as f:
+            worker = f.read()
+        with open(_tool(cfg, "atsc3_watch_av.py"), encoding="utf-8", errors="replace") as f:
+            orchestrator = f.read()
+    except OSError:
+        return False
+    return '"--follow"' in worker and '"--audio-extra"' in orchestrator
+
+
 def supervisor_module(cfg: config.Config):
     """atsc3_run.py as a module: chain_status() and read_health() are the receiver's own readers."""
     spec = importlib.util.spec_from_file_location("atsc3_run_mod", _tool(cfg, "atsc3_run.py"))
